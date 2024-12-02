@@ -11,58 +11,79 @@ from requests.exceptions import RequestException
 from bs4 import BeautifulSoup
 import re
 import time
+from extract_sheets import extract_data_from_excel
 
-def download_pdf_from_s3(url, output_directory="downloads", max_retries=5, initial_delay=1):
+def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, output_directory="downloads", max_retries=5, initial_delay=1):
     try:
+        # Ensure output directory exists
         Path(output_directory).mkdir(parents=True, exist_ok=True)
-        output_path = os.path.join(output_directory, 'downloaded_document.pdf')
-        
+        filename = f"{company_name}_{id}_{last_name}_{file_num}_{year}.pdf"
+        output_path = os.path.join(output_directory, filename)
+
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
+            "Accept": "application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": "https://www.mergentonline.com",  # Update this as per the originating site
+        })
+
         current_retry = 0
-        while current_retry <= max_retries:
+        while current_retry < max_retries:
             try:
-                response = requests.get(url, stream=True)
+                print(f"Attempt {current_retry + 1}/{max_retries} - Downloading: {url}")
+                response = session.get(url, allow_redirects=True, stream=True)
                 response.raise_for_status()
-                
-                if 'application/pdf' not in response.headers.get('content-type', '').lower():
-                    raise RequestException("Response does not contain PDF content")
-                
-                with open(output_path, 'wb') as f:
+                time.sleep(2)  # Add a delay to avoid overloading the server
+
+                # Handle meta-refresh redirects
+                if "text/html" in response.headers.get("content-type", ""):
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    meta_refresh = soup.find("meta", attrs={"http-equiv": "refresh"})
+                    if meta_refresh and "url=" in meta_refresh["content"]:
+                        redirect_url = meta_refresh["content"].split("url=")[-1]
+                        print(f"Redirecting to: {redirect_url}")
+                        url = redirect_url  # Update URL and retry
+                        continue
+
+                # Verify PDF content
+                if "application/pdf" not in response.headers.get("content-type", ""):
+                    raise Exception("Expected PDF content, but got: " + response.headers.get("content-type", ""))
+
+                # Save the PDF
+                with open(output_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                
                 print(f"Successfully downloaded PDF to: {output_path}")
                 return output_path
-                
-            except RequestException as e:
+
+            except requests.exceptions.RequestException as e:
                 current_retry += 1
-                if current_retry > max_retries:
-                    print(f"Maximum retries ({max_retries}) exceeded. Final error: {e}")
-                    return None
-                    
                 delay = initial_delay * (2 ** (current_retry - 1))
-                print(f"Attempt {current_retry}/{max_retries} failed. Retrying in {delay} seconds...")
+                print(f"Retry {current_retry}/{max_retries} after {delay}s due to: {e}")
                 time.sleep(delay)
-                
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+
+        print(f"Failed to download PDF after {max_retries} attempts.")
         return None
 
-def openfile(fileIdList):
-    if not fileIdList:
+    except Exception as e:
+        print(f"Unexpected error occurred: {e}")
+        return None
+
+def openfile(fileId, company_name, id, last_name, year, num):
+    if not fileId:
         print("No files to download")
         return
     
-    for fileId in fileIdList:
-        url = 'https://www.mergentonline.com/investextsearchlive.php?opt=loadDocument&docid='
-        doctype = 'pdf'
-        file_url = f"{url}{fileId}&doctype={doctype}"
-        
-        output_directory = "downloads"
-        max_retries = 5
-        initial_delay = 1
-        
-        download_pdf_from_s3(file_url, output_directory, max_retries, initial_delay)
+    url = 'https://www.mergentonline.com/investextsearchlive.php?opt=loadDocument&docid=%5B%22'
+    doctype = 'pdf'
+    file_url = f"{url}{fileId}%22%5D&doctype={doctype}"
+    
+    output_directory = f"{company_name}_{id}_{last_name}"
+    max_retries = 5
+    initial_delay = 1
+    
+    download_pdf_from_s3(file_url, company_name, id, last_name, num, year, output_directory, max_retries, initial_delay)
 
 def extract_table_ids(html_content):
     try:
@@ -73,32 +94,41 @@ def extract_table_ids(html_content):
             raise ValueError("Table or tbody not found in HTML content")
             
         ids = []
+        years = []
+        
         for row in tbody.find_all('tr', id=re.compile('^key_')):
             if id_match := re.search(r'key_(\d+)', row['id']):
+                # Extract ID
                 ids.append(id_match.group(1))
+                
+                # Extract date and year
+                date_cell = row.find_all('td')[2]  # Third td contains the date
+                date_text = date_cell.text.strip()
+                year = date_text.split('/')[-1]  # Get the year from date format MM/DD/YYYY
+                years.append(year)
         
-        return ids
+        return ids, years
         
     except Exception as e:
         print(f"Error processing HTML: {str(e)}")
-        return []
+        return [], []
 
-def set_search_criteria(firstname, lastname, contributor_name):
+def extract_report_ids(firstname, lastname, contributor_name):
     try:
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized")
         driver = webdriver.Chrome(options=chrome_options)
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, 15)
         
         driver.get("https://www.mergentonline.com/investextfullsearch.php")
-        time.sleep(2)
+        time.sleep(1)
         
         # Set date range
         custom_date_radio = wait.until(EC.element_to_be_clickable((By.ID, "customDateChkb")))
         driver.execute_script("arguments[0].click();", custom_date_radio)
         driver.execute_script("document.getElementById('textInRangeFrom').value='01/01/1999'")
         driver.execute_script("document.getElementById('textInRangeTo').value='12/31/2023'")
-        time.sleep(2)
+        time.sleep(1)
         
         # Add criteria in sequence
         for criteria_num in [5, 11, 8, 9]:
@@ -112,7 +142,7 @@ def set_search_criteria(firstname, lastname, contributor_name):
                 )
                 main_window = driver.current_window_handle
                 driver.execute_script("arguments[0].click();", lookup_link)
-                time.sleep(2)
+                time.sleep(1)
                 
                 popup_window = None
                 for window_handle in driver.window_handles:
@@ -136,7 +166,7 @@ def set_search_criteria(firstname, lastname, contributor_name):
                 )
                 main_window = driver.current_window_handle
                 driver.execute_script("arguments[0].click();", lookup_link)
-                time.sleep(2)
+                time.sleep(1)
                 
                 popup_window = None
                 for window_handle in driver.window_handles:
@@ -152,7 +182,7 @@ def set_search_criteria(firstname, lastname, contributor_name):
                 search_box = search_form.find_element(By.NAME, "lookupsearch")
                 search_box.send_keys(contributor_name)
                 search_form.submit()
-                time.sleep(2)
+                time.sleep(1)
                 
                 # Wait for and select the first result
                 first_result = wait.until(
@@ -186,6 +216,9 @@ def set_search_criteria(firstname, lastname, contributor_name):
                 time.sleep(1)
 
         table_ids = []
+        table_years = []
+        retry_count = 1
+
         while True:
             # Click submit on the last criteria (Author)
             submit_button = wait.until(
@@ -193,55 +226,67 @@ def set_search_criteria(firstname, lastname, contributor_name):
             )
             submit_button.click()
 
-            try:
-                # Wait for match element to appear
-                match_element = WebDriverWait(driver, 35).until(
-                    EC.presence_of_element_located((By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'Matches')]"))
+            while True:
+                print(f"Attempt {retry_count} to get matches...")
+                submit_button = wait.until(
+                    EC.element_to_be_clickable((By.ID, "submitbtn3"))
                 )
-                # Click on the View link
-                view_link = driver.find_element(By.XPATH, "//a[@class='view' and @onclick='selectView(3)']")
-                view_link.click()
+                submit_button.click()
 
-                # Wait for result page to load 
-                wait.until(EC.title_contains("Mergent Online"))
-                
-                # Append current page HTML to the list
-                html_content = driver.page_source
-                ids = extract_table_ids(html_content)
-                table_ids.extend(ids)
-                
-                # Check if there is a next page link
-                next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
-                while next_link:
-                    next_link[0].click()
-                    next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
-                    html_content = driver.page_source
-                    ids = extract_table_ids(html_content)
-                    table_ids.extend(ids)
-                    time.sleep(2)
-                    
-            except TimeoutException:
-                # Check if "N/A" is present
                 try:
-                    na_element = driver.find_element(By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'N/A')]")
-                    # If "N/A" is found, continue the loop to resubmit
-                    continue
-                except NoSuchElementException:
-                    # If neither match count nor "N/A" is found, raise an exception
-                    raise Exception("Unable to find match count or N/A")
+                    match_element = WebDriverWait(driver, 100).until(
+                        EC.presence_of_element_located((By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'Matches')]"))
+                    )
+                    
+                    view_link = driver.find_element(By.XPATH, "//a[@class='view' and @onclick='selectView(3)']")
+                    view_link.click()
 
-            return table_ids
+                    wait.until(EC.title_contains("Mergent Online"))
+                    
+                    html_content = driver.page_source
+                    ids, years = extract_table_ids(html_content)
+                    table_ids.extend(ids)
+                    table_years.extend(years)
+                    
+                    next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+                    while next_link:
+                        next_link[0].click()
+                        next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+                        html_content = driver.page_source
+                        ids, years = extract_table_ids(html_content)
+                        table_ids.extend(ids)
+                        table_years.extend(years)
+                        time.sleep(2)
+                        
+                    return table_ids, table_years
+                        
+                except TimeoutException:
+                    try:
+                        na_element = driver.find_element(By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'N/A')]")
+                        print(f"Got N/A response, retrying... (Attempt {retry_count})")
+                        retry_count += 1
+                        time.sleep(2)
+                        continue
+                    except NoSuchElementException:
+                        raise Exception("Unable to find match count or N/A")
         
     except Exception as e:
         print(f"An error occurred: {str(e)}")
+        return [], []
     
     finally:
         driver.quit()
 
 def main():
-    ids = set_search_criteria()
-    for i, id in enumerate(ids):
-        print(i, id)
+    file_path = "broker_analyst_2_1.xlsx"
+    last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
+    for i in range(len(last_name)):
+        ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
+        if not ids:
+            print(f"No reports found for {first_name[i]} {last_name[i]}")
+            continue
+        for j in range(len(ids)):
+            openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
 
 if __name__ == "__main__":
     main()
