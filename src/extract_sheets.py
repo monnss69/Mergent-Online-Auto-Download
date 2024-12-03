@@ -19,7 +19,10 @@ def extract_data_from_excel(file_path):
             break
             
         broker_name = str(row['report_broker_name'])
-        company_name = broker_name.split(' ', 1)[1] if ' ' in broker_name else broker_name
+        if broker_name == 'BMO Capital Markets':
+            company_name = 'BMO Capital Markets'
+        else:
+            company_name = broker_name.split(' ', 1)[1] if ' ' in broker_name else broker_name
         
         # If company name is empty, stop processing
         if not company_name:

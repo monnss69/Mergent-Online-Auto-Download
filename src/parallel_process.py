@@ -2,8 +2,8 @@ import concurrent.futures
 import pandas as pd
 from datetime import datetime
 import logging
-import src.scraper as scraper
-from src.scraper import extract_report_ids, openfile
+import scraper as scraper
+from scraper import extract_report_ids, openfile
 import extract_sheets
 from extract_sheets import extract_data_from_excel
 
@@ -51,4 +51,4 @@ def parallel_process(file_path, max_workers=5):
 
 if __name__ == "__main__":
     file_path = "broker_analyst_2_1.xlsx"
-    parallel_process(file_path, max_workers=3)  # Adjust max_workers as needed
+    parallel_process(file_path, max_workers=5)  # Adjust max_workers as needed
