@@ -12,6 +12,9 @@ from bs4 import BeautifulSoup
 import re
 import time
 from extract_sheets import extract_data_from_excel
+import logging
+import argparse
+import pandas as pd
 
 def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, output_directory="downloads", max_retries=5, initial_delay=1):
     try:
@@ -116,10 +119,13 @@ def extract_table_ids(html_content):
         return [], []
 
 def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
+    driver = None
     try:
-        print(f"Starting attempt {retry_count}...")
+        logging.info(f"Starting attempt {retry_count} for {firstname} {lastname}")
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
         driver = webdriver.Chrome(options=chrome_options)
         wait = WebDriverWait(driver, 15)
         
