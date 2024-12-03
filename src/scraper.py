@@ -118,18 +118,39 @@ def extract_table_ids(html_content):
         print(f"Error processing HTML: {str(e)}")
         return [], []
 
+def setup_chrome_options():
+    chrome_options = Options()
+    chrome_options.add_argument('--headless=new')  # Using the new headless mode
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')  # Disable GPU hardware acceleration
+    chrome_options.add_argument('--disable-software-rasterizer')
+    chrome_options.add_argument('--ignore-certificate-errors')
+    chrome_options.add_argument('--allow-running-insecure-content')
+    chrome_options.add_argument('--window-size=1920,1080')  # Set a specific window size
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')  # Disable compositor
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    return chrome_options
+
 def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
     driver = None
     try:
         logging.info(f"Starting attempt {retry_count} for {firstname} {lastname}")
-        chrome_options = Options()
-        chrome_options.add_argument("--start-maximized")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        driver = webdriver.Chrome(options=chrome_options)
-        wait = WebDriverWait(driver, 15)
+        
+        # Create ChromeDriver with options
+        chrome_options = setup_chrome_options()
+        try:
+            driver = webdriver.Chrome(options=chrome_options)
+        except Exception as e:
+            print(f"Failed to create Chrome driver: {str(e)}")
+            return [], []
+            
+        if not driver:
+            print("Failed to initialize Chrome driver")
+            return [], []
         
         driver.get("https://www.mergentonline.com/investextfullsearch.php")
+        wait = WebDriverWait(driver, 15)
         time.sleep(1)
         
         # Set date range
@@ -279,16 +300,39 @@ def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
     finally:
         driver.quit()
 
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('scraper.log'),
+            logging.StreamHandler()
+        ]
+    )
+
 def main():
+    setup_logging()
+    logging.info("Starting scraper")
+    
     file_path = "broker_analyst_2_1.xlsx"
-    last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
-    for i in range(len(last_name)):
-        ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
-        if not ids:
-            print(f"No reports found for {first_name[i]} {last_name[i]}")
-            continue
-        for j in range(len(ids)):
-            openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
+    try:
+        last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
+        logging.info(f"Successfully read {len(first_name)} analysts from Excel")
+        
+        for i in range(len(last_name)):
+            logging.info(f"Processing analyst {i+1}/{len(last_name)}: {first_name[i]} {last_name[i]}")
+            ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
+            
+            if not ids:
+                logging.warning(f"No reports found for {first_name[i]} {last_name[i]}")
+                continue
+                
+            logging.info(f"Found {len(ids)} reports for {first_name[i]} {last_name[i]}")
+            for j in range(len(ids)):
+                openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
+                
+    except Exception as e:
+        logging.error(f"Error in main: {str(e)}")
 
 if __name__ == "__main__":
     main()
