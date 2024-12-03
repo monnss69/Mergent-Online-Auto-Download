@@ -2,3 +2,5 @@ Task
 .venv
 downloads
 broker_analyst_2_1.xlsx
+test
+__pycache__
