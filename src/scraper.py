@@ -314,25 +314,30 @@ def main():
     setup_logging()
     logging.info("Starting scraper")
     
+    # Parse batch argument
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--batch', required=True, help='Batch range in format start-end')
+    args = parser.parse_args()
+    
+    # Parse batch range
+    start_idx, end_idx = map(int, args.batch.split('-'))
+    logging.info(f"Processing batch range: {start_idx}-{end_idx}")
+    
     file_path = "broker_analyst_2_1.xlsx"
-    try:
-        last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
-        logging.info(f"Successfully read {len(first_name)} analysts from Excel")
+    last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
+    logging.info(f"Successfully read {len(first_name)} analysts from Excel")
+    
+    # Process only analysts in the specified range
+    for i in range(start_idx, min(end_idx, len(last_name))):
+        logging.info(f"Processing analyst {i+1}/{len(last_name)}: {first_name[i]} {last_name[i]}")
+        ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
         
-        for i in range(len(last_name)):
-            logging.info(f"Processing analyst {i+1}/{len(last_name)}: {first_name[i]} {last_name[i]}")
-            ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
+        if not ids:
+            logging.warning(f"No reports found for {first_name[i]} {last_name[i]}")
+            continue
             
-            if not ids:
-                logging.warning(f"No reports found for {first_name[i]} {last_name[i]}")
-                continue
-                
-            logging.info(f"Found {len(ids)} reports for {first_name[i]} {last_name[i]}")
-            for j in range(len(ids)):
-                openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
-                
-    except Exception as e:
-        logging.error(f"Error in main: {str(e)}")
+        for j in range(len(ids)):
+            openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
 
 if __name__ == "__main__":
     main()
