@@ -3,3 +3,5 @@ Task
 downloads
 test
 __pycache__
+*.log
+*.pdf
