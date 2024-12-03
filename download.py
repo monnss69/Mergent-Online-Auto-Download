@@ -33,7 +33,6 @@ def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, outpu
                 print(f"Attempt {current_retry + 1}/{max_retries} - Downloading: {url}")
                 response = session.get(url, allow_redirects=True, stream=True)
                 response.raise_for_status()
-                time.sleep(2)  # Add a delay to avoid overloading the server
 
                 # Handle meta-refresh redirects
                 if "text/html" in response.headers.get("content-type", ""):
@@ -47,7 +46,10 @@ def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, outpu
 
                 # Verify PDF content
                 if "application/pdf" not in response.headers.get("content-type", ""):
-                    raise Exception("Expected PDF content, but got: " + response.headers.get("content-type", ""))
+                    print("Content is not a PDF, retrying...")
+                    current_retry += 1
+                    time.sleep(initial_delay + current_retry)
+                    continue
 
                 # Save the PDF
                 with open(output_path, "wb") as f:
@@ -113,8 +115,9 @@ def extract_table_ids(html_content):
         print(f"Error processing HTML: {str(e)}")
         return [], []
 
-def extract_report_ids(firstname, lastname, contributor_name):
+def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
     try:
+        print(f"Starting attempt {retry_count}...")
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized")
         driver = webdriver.Chrome(options=chrome_options)
@@ -217,59 +220,52 @@ def extract_report_ids(firstname, lastname, contributor_name):
 
         table_ids = []
         table_years = []
-        retry_count = 1
 
-        while True:
-            # Click submit on the last criteria (Author)
-            submit_button = wait.until(
-                EC.element_to_be_clickable((By.ID, "submitbtn3"))
+        print(f"Attempt {retry_count} to get matches...")
+        submit_button = wait.until(
+            EC.element_to_be_clickable((By.ID, "submitbtn3"))
+        )
+        submit_button.click()
+
+        try:
+            match_element = WebDriverWait(driver, 100).until(
+                EC.presence_of_element_located((By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'Matches')]"))
             )
-            submit_button.click()
+            
+            view_link = driver.find_element(By.XPATH, "//a[@class='view' and @onclick='selectView(3)']")
+            view_link.click()
 
-            while True:
-                print(f"Attempt {retry_count} to get matches...")
-                submit_button = wait.until(
-                    EC.element_to_be_clickable((By.ID, "submitbtn3"))
-                )
-                submit_button.click()
+            wait.until(EC.title_contains("Mergent Online"))
+            
+            html_content = driver.page_source
+            ids, years = extract_table_ids(html_content)
+            table_ids = []
+            table_years = []
+            table_ids.extend(ids)
+            table_years.extend(years)
+            
+            next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+            while next_link:
+                next_link[0].click()
+                next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+                html_content = driver.page_source
+                ids, years = extract_table_ids(html_content)
+                table_ids.extend(ids)
+                table_years.extend(years)
+                time.sleep(2)
+                
+            return table_ids, table_years
+                
+        except TimeoutException:
+            try:
+                na_element = driver.find_element(By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'N/A')]")
+                print(f"Got N/A response on attempt {retry_count}, restarting process...")
+                driver.quit()
+                time.sleep(2)
+                return extract_report_ids(firstname, lastname, contributor_name, retry_count + 1)
+            except NoSuchElementException:
+                raise Exception("Unable to find match count or N/A")
 
-                try:
-                    match_element = WebDriverWait(driver, 100).until(
-                        EC.presence_of_element_located((By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'Matches')]"))
-                    )
-                    
-                    view_link = driver.find_element(By.XPATH, "//a[@class='view' and @onclick='selectView(3)']")
-                    view_link.click()
-
-                    wait.until(EC.title_contains("Mergent Online"))
-                    
-                    html_content = driver.page_source
-                    ids, years = extract_table_ids(html_content)
-                    table_ids.extend(ids)
-                    table_years.extend(years)
-                    
-                    next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
-                    while next_link:
-                        next_link[0].click()
-                        next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
-                        html_content = driver.page_source
-                        ids, years = extract_table_ids(html_content)
-                        table_ids.extend(ids)
-                        table_years.extend(years)
-                        time.sleep(2)
-                        
-                    return table_ids, table_years
-                        
-                except TimeoutException:
-                    try:
-                        na_element = driver.find_element(By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'N/A')]")
-                        print(f"Got N/A response, retrying... (Attempt {retry_count})")
-                        retry_count += 1
-                        time.sleep(2)
-                        continue
-                    except NoSuchElementException:
-                        raise Exception("Unable to find match count or N/A")
-        
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         return [], []
