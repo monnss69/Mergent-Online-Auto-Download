@@ -29,7 +29,7 @@ jobs:
       - name: Create batches
         id: create-matrix
         run: |
-          python - <<EOF
+          MATRIX=$(python - <<EOF
           import pandas as pd
           import math
           import json
@@ -47,12 +47,13 @@ jobs:
               end = min((i + 1) * batch_size, total_analysts)
               batches.append(f"{start}-{end}")
           
-          # Set output for GitHub Actions
+          # Create matrix output
           matrix = {"batch": batches}
-          print(f"matrix={json.dumps(matrix)}")
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"matrix={json.dumps(matrix)}\n")
+          print(json.dumps(matrix))
           EOF
+          )
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+        shell: bash
 
   scrape:
     needs: setup
@@ -60,7 +61,7 @@ jobs:
     strategy:
       matrix: ${{fromJson(needs.setup.outputs.matrix)}}
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 5
     
     steps:
       - uses: actions/checkout@v3
