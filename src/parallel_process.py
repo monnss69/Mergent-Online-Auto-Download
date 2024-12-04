@@ -44,7 +44,7 @@ def parallel_process(file_path, max_workers=None):
     analyst_data = list(zip(first_name, last_name, analys_id, IBES_id, company))
 
     if max_workers is None:
-        max_workers = min(32, (os.cpu_count() or 1) * 4)
+        max_workers = min(1, (os.cpu_count() or 1) * 4)
     
     # Process analysts in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

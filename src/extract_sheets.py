@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from typing import List, Tuple
 
 def extract_data_from_excel(file_path):
     # Read the Excel file
@@ -44,7 +45,7 @@ def extract_data_from_excel(file_path):
         IBES_id.append(str(row['IBES_id']) if not pd.isna(row['IBES_id']) else '')
     
     print(f"\nProcessed {len(company)} rows with valid company names")
-    
+
     return last_name, first_name, analys_id, IBES_id, company
 
 # Example usage:

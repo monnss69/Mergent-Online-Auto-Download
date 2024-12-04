@@ -5,3 +5,4 @@ test
 __pycache__
 *.log
 *.pdf
+*.xlsx
