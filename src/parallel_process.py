@@ -1,9 +1,10 @@
 import concurrent.futures
+import os
 import pandas as pd
 from datetime import datetime
 import logging
-import src.scraper as scraper
-from src.scraper import extract_report_ids, openfile
+import scraper as scraper
+from scraper import extract_report_ids, openfile
 import extract_sheets
 from extract_sheets import extract_data_from_excel
 
@@ -33,7 +34,7 @@ def process_analyst(analyst_data):
     except Exception as e:
         logging.error(f"Error processing {first_name} {last_name}: {str(e)}")
 
-def parallel_process(file_path, max_workers=5):
+def parallel_process(file_path, max_workers=None):
     setup_logging()
     
     # Extract data from Excel
@@ -41,6 +42,9 @@ def parallel_process(file_path, max_workers=5):
     
     # Create list of analyst data tuples
     analyst_data = list(zip(first_name, last_name, analys_id, IBES_id, company))
+
+    if max_workers is None:
+        max_workers = min(1, (os.cpu_count() or 1) * 4)
     
     # Process analysts in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -51,4 +55,4 @@ def parallel_process(file_path, max_workers=5):
 
 if __name__ == "__main__":
     file_path = "broker_analyst_2_1.xlsx"
-    parallel_process(file_path, max_workers=3)  # Adjust max_workers as needed
+    parallel_process(file_path)  # Adjust max_workers as needed

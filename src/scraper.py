@@ -19,6 +19,8 @@ import pandas as pd
 def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, output_directory="downloads", max_retries=5, initial_delay=1):
     try:
         # Ensure output directory exists
+        last_name = last_name.split(",")[0]
+        
         Path(output_directory).mkdir(parents=True, exist_ok=True)
         filename = f"{company_name}_{id}_{last_name}_{file_num}_{year}.pdf"
         output_path = os.path.join(output_directory, filename)
@@ -120,11 +122,12 @@ def extract_table_ids(html_content):
 
 def setup_chrome_options():
     chrome_options = Options()
-    chrome_options.add_argument('--headless=new')  # Using the new headless mode
+    chrome_options.add_argument('--headless=new')  # Enable headless mode
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
     chrome_options.add_argument('--disable-gpu')  # Disable GPU hardware acceleration
     chrome_options.add_argument('--disable-software-rasterizer')
+    chrome_options.add_argument('--disable-extensions')
     chrome_options.add_argument('--ignore-certificate-errors')
     chrome_options.add_argument('--allow-running-insecure-content')
     chrome_options.add_argument('--window-size=1920,1080')  # Set a specific window size
@@ -133,6 +136,10 @@ def setup_chrome_options():
     return chrome_options
 
 def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
+
+    if retry_count%5 == 0:
+        time.sleep(120)
+
     driver = None
     try:
         logging.info(f"Starting attempt {retry_count} for {firstname} {lastname}")
@@ -157,7 +164,7 @@ def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
         custom_date_radio = wait.until(EC.element_to_be_clickable((By.ID, "customDateChkb")))
         driver.execute_script("arguments[0].click();", custom_date_radio)
         driver.execute_script("document.getElementById('textInRangeFrom').value='01/01/1999'")
-        driver.execute_script("document.getElementById('textInRangeTo').value='12/31/2023'")
+        driver.execute_script("document.getElementById('textInRangeTo').value='12/31/2022'")
         time.sleep(1)
         
         # Add criteria in sequence
@@ -228,11 +235,11 @@ def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
             # Handle Author criteria
             elif criteria_num == 9:
                 # Wait for first name input field and enter "John"
-                firstname_input = wait.until(
-                    EC.presence_of_element_located((By.NAME, "firstname3"))
-                )
-                firstname_input.clear()
-                firstname_input.send_keys(firstname)
+                # firstname_input = wait.until(
+                #     EC.presence_of_element_located((By.NAME, "firstname3"))
+                # )
+                # firstname_input.clear()
+                # firstname_input.send_keys(firstname)
                 
                 # Find last name input field and enter "Grassano"
                 lastname_input = wait.until(
@@ -314,30 +321,25 @@ def main():
     setup_logging()
     logging.info("Starting scraper")
     
-    # Parse batch argument
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--batch', required=True, help='Batch range in format start-end')
-    args = parser.parse_args()
-    
-    # Parse batch range
-    start_idx, end_idx = map(int, args.batch.split('-'))
-    logging.info(f"Processing batch range: {start_idx}-{end_idx}")
-    
     file_path = "broker_analyst_2_1.xlsx"
-    last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
-    logging.info(f"Successfully read {len(first_name)} analysts from Excel")
-    
-    # Process only analysts in the specified range
-    for i in range(start_idx, min(end_idx, len(last_name))):
-        logging.info(f"Processing analyst {i+1}/{len(last_name)}: {first_name[i]} {last_name[i]}")
-        ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
+    try:
+        last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
+        logging.info(f"Successfully read {len(first_name)} analysts from Excel")
         
-        if not ids:
-            logging.warning(f"No reports found for {first_name[i]} {last_name[i]}")
-            continue
+        for i in range(len(last_name)):
+            logging.info(f"Processing analyst {i+1}/{len(last_name)}: {first_name[i]} {last_name[i]}")
+            ids, years = extract_report_ids(first_name[i], last_name[i], company[i])
             
-        for j in range(len(ids)):
-            openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
+            if not ids:
+                logging.warning(f"No reports found for {first_name[i]} {last_name[i]}")
+                continue
+                
+            logging.info(f"Found {len(ids)} reports for {first_name[i]} {last_name[i]}")
+            for j in range(len(ids)):
+                openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
+                
+    except Exception as e:
+        logging.error(f"Error in main: {str(e)}")
 
 if __name__ == "__main__":
     main()
