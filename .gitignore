@@ -1,8 +1,2 @@
-Task
-.venv
-downloads
-test
-__pycache__
-*.log
-*.pdf
 *.xlsx
+.venv

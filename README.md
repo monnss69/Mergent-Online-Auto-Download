@@ -1,36 +1,16 @@
 # Mergent Online Report Downloader
 
-This project automates the process of downloading research reports from Mergent Online, specifically focusing on extracting reports from financial institutions and analysts. The application handles authentication, search criteria configuration, and bulk downloading of PDF reports.
+An intelligent web scraper for downloading research reports from Mergent Online with advanced anti-detection features and human-like behavior simulation.
 
-## Project Overview
+## Features
 
-The application streamlines the following workflow:
-1. Extracts analyst information from Excel spreadsheets
-2. Automatically navigates Mergent Online's search interface
-3. Sets specific search criteria including date ranges, report styles, and author information
-4. Downloads matching reports in PDF format
-5. Organizes downloaded files with consistent naming conventions
-
-## Requirements
-
-### Python Dependencies
-```
-selenium==4.16.0
-beautifulsoup4==4.12.2
-requests==2.31.0
-urllib3==2.1.0
-pandas==2.1.4
-pathlib==1.0.1
-certifi==2023.11.17
-charset-normalizer==3.3.2
-soupsieve==2.5
-idna==3.6
-```
-
-### System Requirements
-- Python 3.8 or higher
-- Chrome WebDriver compatible with your Chrome browser version
-- Sufficient storage space for downloaded PDF files
+- Advanced anti-detection mechanisms
+- Human-like browsing behavior simulation
+- Intelligent rate limiting and request distribution
+- Natural timing patterns
+- Robust error handling and retry mechanisms
+- Comprehensive logging system
+- Configurable browser fingerprinting
 
 ## Installation
 
@@ -40,75 +20,170 @@ git clone https://github.com/yourusername/mergent-online-auto-download.git
 cd mergent-online-auto-download
 ```
 
-2. Install required packages:
+2. Create a virtual environment and activate it:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Ensure Chrome WebDriver is installed and in your system PATH.
+## Configuration
+
+Create a `config.json` file to customize behavior:
+
+```json
+{
+    "max_requests_per_hour": 1000,
+    "chrome_options": {
+        "headless": false,
+        "disable_gpu": true
+    },
+    "human_behavior": {
+        "min_action_delay": 0.5,
+        "max_action_delay": 3.0,
+        "scroll_probability": 0.7,
+        "mouse_movement_probability": 0.8
+    }
+}
+```
 
 ## Usage
 
-### Excel Data Extraction
-The program reads analyst information from an Excel file with the following required columns:
-- name_last
-- report_author_clean
-- analys
-- IBES_id
-- report_broker_name
+### Basic Usage
 
-### Running the Script
-```python
-# Extract data from Excel
-last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel("broker_analyst_2_1.xlsx")
-
-# Extract report IDs and years
-report_ids, report_years = extract_report_ids(first_name[0], last_name[0], company[0])
-
-# Download reports
-openfile(report_ids, company[0], analys_id[0], last_name[0], report_years[0])
+```bash
+python src/main.py --input data/analysts.xlsx --output downloads
 ```
 
-### Output Structure
-Downloaded files are saved in the following format:
-```
-downloads/
-    CompanyName_AnalystID_LastName_ReportID_Year.pdf
+### Advanced Usage
+
+```bash
+python src/main.py \
+    --input data/analysts.xlsx \
+    --output downloads \
+    --rate-limit 1000
 ```
 
-## Features
+### Arguments
 
-- Robust retry mechanism for handling network issues and server responses
-- Parallel processing capabilities using GitHub Actions
-- Automatic handling of pagination in search results
-- Comprehensive error handling and logging
-- Efficient file naming and organization system
+- `--input`: Path to Excel file containing analyst data (required)
+- `--output`: Output directory for downloaded PDFs (default: "downloads")
+- `--rate-limit`: Maximum requests per hour (default: 1000)
+
+## Project Structure
+
+```
+mergent-online-auto-download/
+├── src/
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── browser.py        # Browser management
+│   │   ├── fingerprint.py    # Browser fingerprinting
+│   │   └── human_behavior.py # Behavior simulation
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   ├── logger.py         # Logging configuration
+│   │   ├── rate_limiter.py   # Rate limiting
+│   │   └── data_extractor.py # Data extraction
+│   ├── downloaders/
+│   │   ├── __init__.py
+│   │   └── pdf_downloader.py # PDF download logic
+│   ├── config.py            # Configuration management
+│   └── main.py             # Entry point
+├── requirements.txt
+└── README.md
+```
+
+## Anti-Detection Features
+
+1. Browser Fingerprinting
+   - Random screen resolutions
+   - Variable color depths
+   - Platform rotation
+   - Hardware concurrency variation
+   - Canvas fingerprint randomization
+
+2. Human Behavior Simulation
+   - Natural mouse movements
+   - Random scrolling patterns
+   - Variable typing speeds
+   - Realistic click patterns
+   - Page interaction simulation
+
+3. Request Management
+   - Intelligent rate limiting
+   - Natural request distribution
+   - Header variation
+   - Response handling delays
 
 ## Error Handling
 
-The application includes multiple layers of error handling:
-- Network connection issues
-- Invalid search responses
-- File download failures
-- Data validation checks
+- Automatic retries with exponential backoff
+- Session recovery
+- Comprehensive error logging
+- Graceful failure handling
+
+## Excel File Format
+
+The input Excel file should contain the following columns:
+- `name_last`: Last name of the analyst
+- `report_author_clean`: Full name of the report author
+- `analys`: Analyst ID
+- `IBES_id`: IBES identifier
+- `report_broker_name`: Name of the brokerage firm
+
+## Output Format
+
+Downloaded files will be saved with the following naming convention:
+```
+[output_directory]/[company_name]_[analyst_id]_[last_name]_[file_num]_[year].pdf
+```
 
 ## Contributing
 
-Please read CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
+1. Fork the repository
+2. Create your feature branch: `git checkout -b feature/new-feature`
+3. Commit your changes: `git commit -am 'Add new feature'`
+4. Push to the branch: `git push origin feature/new-feature`
+5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE.md file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgments
+## Disclaimer
 
-- Mergent Online for providing the research report database
-- The Selenium and BeautifulSoup communities for their excellent documentation
-- Contributors who have helped improve this project
+This tool is intended for authorized users of Mergent Online and should be used in compliance with their terms of service. Please ensure you have proper authorization before using this tool.
 
-## Contact
+## Troubleshooting
 
-For any questions or concerns, please open an issue in the GitHub repository.
+Common issues and solutions:
 
----
-**Note**: This tool is intended for authorized users of Mergent Online and should be used in compliance with their terms of service.
+1. Chrome Driver Issues
+   - Ensure Chrome is installed
+   - Update Chrome to the latest version
+   - Check ChromeDriver compatibility
+
+2. Rate Limiting
+   - Adjust max_requests_per_hour in config
+   - Monitor scraper.log for rate limit warnings
+   - Increase delays in human_behavior settings
+
+3. Download Failures
+   - Check network connectivity
+   - Verify file permissions
+   - Review error messages in logs
+
+## Support
+
+For issues and questions:
+1. Check the troubleshooting section
+2. Review the logs in your output directory
+3. Open an issue on GitHub with:
+   - Full error message
+   - Relevant log snippets
+   - Configuration being used
