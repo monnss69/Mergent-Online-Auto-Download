@@ -19,6 +19,39 @@ import logging
 import argparse
 import pandas as pd
 from fake_useragent import UserAgent
+from threading import Lock
+import time
+from collections import deque
+
+class RateLimiter:
+    def __init__(self, max_requests=600, time_window=3600):
+        self.max_requests = max_requests  # 600 downloads per hour
+        self.time_window = time_window    # 3600 seconds (1 hour)
+        self.requests = deque()
+        self.lock = Lock()
+
+    def can_proceed(self):
+        """Check if a new download can proceed based on the rate limit"""
+        with self.lock:
+            now = time.time()
+            
+            # Remove requests older than the time window
+            while self.requests and now - self.requests[0] >= self.time_window:
+                self.requests.popleft()
+            
+            # Check if we're under the limit
+            if len(self.requests) < self.max_requests:
+                self.requests.append(now)
+                return True
+                
+            return False
+        
+    def wait_if_needed(self):
+        """Wait until a download slot becomes available"""
+        while not self.can_proceed():
+            # Wait for a bit before checking again
+            time.sleep(1)
+        return True
 
 def generate_random_fingerprint():
     # Random screen resolutions
@@ -92,32 +125,56 @@ def add_random_behaviors(driver):
     driver.execute_script(canvas_noise)
 
 def random_mouse_movement(driver):
-    """Perform random mouse movements"""
-    action = ActionChains(driver)
-    
-    # Get window size
-    window_size = driver.get_window_size()
-    width = window_size['width']
-    height = window_size['height']
-    
-    # Generate random points for mouse movement
-    points = [(random.randint(0, width), random.randint(0, height)) 
-             for _ in range(random.randint(3, 7))]
-    
-    # Perform random movements
-    current_x = current_y = 0
-    for x, y in points:
-        # Calculate intermediate points for more natural movement
-        steps = random.randint(2, 5)
-        for i in range(steps):
-            intermediate_x = current_x + (x - current_x) * (i + 1) / steps
-            intermediate_y = current_y + (y - current_y) * (i + 1) / steps
-            action.move_by_offset(intermediate_x - current_x, intermediate_y - current_y)
-            action.pause(random.uniform(0.1, 0.3))
-            current_x, current_y = intermediate_x, intermediate_y
-    
-    action.perform()
-    time.sleep(random.uniform(0.5, 1))
+    """Perform random mouse movements within viewport bounds"""
+    try:
+        action = ActionChains(driver)
+        
+        # Get viewport size (visible area) instead of window size
+        viewport_width = driver.execute_script("return window.innerWidth;")
+        viewport_height = driver.execute_script("return window.innerHeight;")
+        
+        # Add padding to avoid edge cases
+        padding = 100
+        safe_width = viewport_width - padding
+        safe_height = viewport_height - padding
+        
+        # Generate random points within safe bounds
+        points = [
+            (random.randint(padding, safe_width), 
+             random.randint(padding, safe_height))
+            for _ in range(random.randint(2, 5))
+        ]
+        
+        # Reset mouse position to center of screen
+        action.move_by_offset(viewport_width//2, viewport_height//2).perform()
+        current_x = viewport_width//2
+        current_y = viewport_height//2
+        
+        # Perform smooth movements between points
+        for x, y in points:
+            # Calculate relative movement from current position
+            delta_x = x - current_x
+            delta_y = y - current_y
+            
+            # Break the movement into smaller steps
+            steps = random.randint(2, 4)
+            for i in range(steps):
+                step_x = delta_x / steps
+                step_y = delta_y / steps
+                
+                action.move_by_offset(step_x, step_y)
+                action.pause(random.uniform(0.1, 0.2))
+                
+                current_x += step_x
+                current_y += step_y
+            
+            action.perform()
+            time.sleep(random.uniform(0.2, 0.5))
+            
+    except Exception as e:
+        logging.warning(f"Mouse movement failed: {str(e)}")
+        # Continue execution even if mouse movement fails
+        pass
 
 def human_like_click(driver, element):
     """Perform a more human-like click with slight offset and random timing"""
@@ -211,11 +268,15 @@ def random_page_interaction(driver):
     except Exception as e:
         logging.warning(f"Failed to perform random page interaction: {str(e)}")
 
-def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, output_directory="downloads", max_retries=5, initial_delay=1):
+def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, 
+                        output_directory="downloads", max_retries=5, initial_delay=1,
+                        rate_limiter=None):
+    if rate_limiter:
+        rate_limiter.wait_if_needed()
+    
     try:
         # Ensure output directory exists
         last_name = last_name.split(",")[0]
-        
         Path(output_directory).mkdir(parents=True, exist_ok=True)
         filename = f"{company_name}_{id}_{last_name}_{file_num}_{year}.pdf"
         output_path = os.path.join(output_directory, filename)
@@ -272,7 +333,7 @@ def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, outpu
         print(f"Unexpected error occurred: {e}")
         return None
 
-def openfile(fileId, company_name, id, last_name, year, num):
+def openfile(fileId, company_name, id, last_name, year, num, rate_limiter=None):
     if not fileId:
         print("No files to download")
         return
@@ -282,10 +343,11 @@ def openfile(fileId, company_name, id, last_name, year, num):
     file_url = f"{url}{fileId}%22%5D&doctype={doctype}"
     
     output_directory = f"{company_name}_{id}_{last_name}"
-    max_retries = 5
+    max_retries = 3
     initial_delay = 1
     
-    download_pdf_from_s3(file_url, company_name, id, last_name, num, year, output_directory, max_retries, initial_delay)
+    download_pdf_from_s3(file_url, company_name, id, last_name, num, year, 
+                        output_directory, max_retries, initial_delay, rate_limiter)
 
 def extract_table_ids(html_content):
     try:
@@ -336,9 +398,6 @@ def setup_chrome_options():
     chrome_options.add_argument('--ignore-certificate-errors')
     chrome_options.add_argument(f'--window-size={fingerprint["resolution"][0]},{fingerprint["resolution"][1]}')
     chrome_options.add_argument('--disable-features=VizDisplayCompositor')
-    
-    # Open DevTools
-    chrome_options.add_argument('--auto-open-devtools-for-tabs')
     
     # Add random user agent
     ua = UserAgent()
@@ -659,6 +718,9 @@ def main():
     setup_logging()
     logging.info("Starting scraper")
     
+    # Initialize rate limiter
+    rate_limiter = RateLimiter(max_requests=600, time_window=3600)
+    
     file_path = "broker_analyst_2_1.xlsx"
     try:
         last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
@@ -674,7 +736,8 @@ def main():
                 
             logging.info(f"Found {len(ids)} reports for {first_name[i]} {last_name[i]}")
             for j in range(len(ids)):
-                openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j)
+                openfile(ids[j], IBES_id[i], analys_id[i], last_name[i], years[j], len(ids) - j, 
+                        rate_limiter=rate_limiter)  # Pass rate_limiter to openfile
                 
     except Exception as e:
         logging.error(f"Error in main: {str(e)}")
