@@ -185,7 +185,6 @@ def setup_chrome_options():
     return chrome_options
 
 def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
-
     if retry_count%5 == 0:
         time.sleep(120)
 
@@ -281,14 +280,14 @@ def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
                 
             # Handle Author criteria
             elif criteria_num == 9:
-                # Wait for first name input field and enter "John"
+                # Wait for first name input field
                 firstname_input = wait.until(
                     EC.presence_of_element_located((By.NAME, "firstname3"))
                 )
                 firstname_input.clear()
                 firstname_input.send_keys(firstname)
                 
-                # Find last name input field and enter "Grassano"
+                # Find last name input field
                 lastname_input = wait.until(
                     EC.presence_of_element_located((By.NAME, "lastname3"))
                 )
@@ -298,57 +297,83 @@ def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
                 # Trigger the setAuthorName JavaScript function
                 driver.execute_script("setAuthorName(3)")
                 time.sleep(1)
-        table_ids = []
-        table_years = []
-        print(f"Attempt {retry_count} to get matches...")
-        submit_button = wait.until(
-            EC.element_to_be_clickable((By.ID, "submitbtn3"))
-        )
-        submit_button.click()
-        try:
-            match_element = WebDriverWait(driver, 100).until(
-                EC.presence_of_element_located((By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'Matches')]"))
+
+        # Initialize submit retry counter
+        submit_retry_count = 0
+        max_submit_retries = 3
+        
+        while submit_retry_count < max_submit_retries:
+            print(f"Submit attempt {submit_retry_count + 1}/{max_submit_retries} for {firstname} {lastname}...")
+            
+            # Add random delay before clicking submit
+            add_random_delay()
+            
+            submit_button = wait.until(
+                EC.element_to_be_clickable((By.ID, "submitbtn3"))
             )
+            submit_button.click()
             
-            view_link = driver.find_element(By.XPATH, "//a[@class='view' and @onclick='selectView(3)']")
-            view_link.click()
-            wait.until(EC.title_contains("Mergent Online"))
-            
-            html_content = driver.page_source
-            ids, years = extract_table_ids(html_content)
-            table_ids = []
-            table_years = []
-            table_ids.extend(ids)
-            table_years.extend(years)
-            
-            next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
-            while next_link:
-                add_random_delay()  # Add random delay before clicking next
-                next_link[0].click()
-                next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+            try:
+                # Wait for either "Matches" or "N/A" to appear
+                result_element = WebDriverWait(driver, 100).until(
+                    EC.presence_of_element_located((By.XPATH, 
+                        "//td[@class='match']//div[@id='matched3' and (contains(text(), 'Matches') or contains(text(), 'N/A'))]"
+                    ))
+                )
+                
+                # Check if we got N/A
+                if "N/A" in result_element.text:
+                    submit_retry_count += 1
+                    if submit_retry_count < max_submit_retries:
+                        print(f"Got N/A response, retrying submit... ({submit_retry_count}/{max_submit_retries})")
+                        time.sleep(2)  # Wait before retrying
+                        continue
+                    else:
+                        print(f"Got N/A response after {max_submit_retries} submit attempts, moving to next analyst...")
+                        return [], []
+                
+                # If we got matches, proceed with viewing results
+                view_link = driver.find_element(By.XPATH, "//a[@class='view' and @onclick='selectView(3)']")
+                view_link.click()
+                wait.until(EC.title_contains("Mergent Online"))
+                
                 html_content = driver.page_source
                 ids, years = extract_table_ids(html_content)
+                table_ids = []
+                table_years = []
                 table_ids.extend(ids)
                 table_years.extend(years)
-                time.sleep(2)
                 
-            return table_ids, table_years
+                next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+                while next_link:
+                    add_random_delay()  # Add random delay before clicking next
+                    next_link[0].click()
+                    next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
+                    html_content = driver.page_source
+                    ids, years = extract_table_ids(html_content)
+                    table_ids.extend(ids)
+                    table_years.extend(years)
+                    time.sleep(2)
                 
-        except TimeoutException:
-            try:
-                na_element = driver.find_element(By.XPATH, "//td[@class='match']//div[@id='matched3' and contains(text(), 'N/A')]")
-                print(f"Got N/A response on attempt {retry_count}, restarting process...")
-                driver.quit()
-                time.sleep(2)
-                return extract_report_ids(firstname, lastname, contributor_name, retry_count + 1)
-            except NoSuchElementException:
-                raise Exception("Unable to find match count or N/A")
+                return table_ids, table_years
+                
+            except TimeoutException:
+                submit_retry_count += 1
+                if submit_retry_count < max_submit_retries:
+                    print(f"Timeout occurred, retrying submit... ({submit_retry_count}/{max_submit_retries})")
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"Timeout after {max_submit_retries} submit attempts, moving to next analyst...")
+                    return [], []
+                    
     except Exception as e:
         print(f"An error occurred: {str(e)}")
         return [], []
     
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
 
 def setup_logging():
     logging.basicConfig(

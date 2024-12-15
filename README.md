@@ -1,114 +1,75 @@
-# Mergent Online Report Downloader
+# Mergent Online Report Scraper - User Guide
 
-This project automates the process of downloading research reports from Mergent Online, specifically focusing on extracting reports from financial institutions and analysts. The application handles authentication, search criteria configuration, and bulk downloading of PDF reports.
+This tool helps you automatically download research reports from Mergent Online based on analyst information provided in an Excel file.
 
-## Project Overview
+## Prerequisites
 
-The application streamlines the following workflow:
-1. Extracts analyst information from Excel spreadsheets
-2. Automatically navigates Mergent Online's search interface
-3. Sets specific search criteria including date ranges, report styles, and author information
-4. Downloads matching reports in PDF format
-5. Organizes downloaded files with consistent naming conventions
+1. Python 3.8 or higher installed on your computer
+2. Google Chrome browser installed
+3. Excel file named `analysts.xlsx` with the following columns:
+   - name_last
+   - report_author_clean
+   - analys
+   - IBES_id
+   - report_broker_name
 
-## Requirements
+## Quick Start Guide
 
-### Python Dependencies
-```
-selenium==4.16.0
-beautifulsoup4==4.12.2
-requests==2.31.0
-urllib3==2.1.0
-pandas==2.1.4
-pathlib==1.0.1
-certifi==2023.11.17
-charset-normalizer==3.3.2
-soupsieve==2.5
-idna==3.6
-```
+### For Windows Users:
 
-### System Requirements
-- Python 3.8 or higher
-- Chrome WebDriver compatible with your Chrome browser version
-- Sufficient storage space for downloaded PDF files
+1. Download this folder to your computer
+2. Place your `analysts.xlsx` file in the same folder as the scripts
+3. Double-click `run_scraper.bat`
+4. Follow the prompts on screen
 
-## Installation
+### For Mac/Linux Users:
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/mergent-online-auto-download.git
-cd mergent-online-auto-download
-```
+1. Download this folder to your computer
+2. Place your `analysts.xlsx` file in the same folder as the scripts
+3. Open Terminal in this folder
+4. Run the following commands:
+   ```bash
+   chmod +x run_scraper.sh
+   ./run_scraper.sh
+   ```
+5. Follow the prompts on screen
 
-2. Install required packages:
-```bash
-pip install -r requirements.txt
-```
+## Excel File Format
 
-3. Ensure Chrome WebDriver is installed and in your system PATH.
+Your `analysts.xlsx` file should be formatted as follows:
+- Each row represents one analyst
+- Required columns:
+  - name_last: Analyst's last name
+  - report_author_clean: Full name of the analyst
+  - analys: Analyst ID
+  - IBES_id: IBES identifier
+  - report_broker_name: Name of the brokerage firm
 
-## Usage
+## Output
 
-### Excel Data Extraction
-The program reads analyst information from an Excel file with the following required columns:
-- name_last
-- report_author_clean
-- analys
-- IBES_id
-- report_broker_name
+- Downloaded reports will be saved in the `downloads` folder
+- Each report will be named in the format: `CompanyName_AnalystID_LastName_ReportNumber_Year.pdf`
+- A log file (`scraper.log`) will be created with detailed information about the scraping process
 
-### Running the Script
-```python
-# Extract data from Excel
-last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel("broker_analyst_2_1.xlsx")
+## Troubleshooting
 
-# Extract report IDs and years
-report_ids, report_years = extract_report_ids(first_name[0], last_name[0], company[0])
+1. If you get a Python error:
+   - Make sure Python 3.8 or higher is installed
+   - Try running the installer again
 
-# Download reports
-openfile(report_ids, company[0], analys_id[0], last_name[0], report_years[0])
-```
+2. If you get a Chrome error:
+   - Make sure Google Chrome is installed
+   - Try updating Chrome to the latest version
 
-### Output Structure
-Downloaded files are saved in the following format:
-```
-downloads/
-    CompanyName_AnalystID_LastName_ReportID_Year.pdf
-```
+3. If no reports are downloaded:
+   - Check your Excel file format
+   - Verify your internet connection
+   - Check the log file for detailed error messages
 
-## Features
+## Support
 
-- Robust retry mechanism for handling network issues and server responses
-- Parallel processing capabilities using GitHub Actions
-- Automatic handling of pagination in search results
-- Comprehensive error handling and logging
-- Efficient file naming and organization system
-
-## Error Handling
-
-The application includes multiple layers of error handling:
-- Network connection issues
-- Invalid search responses
-- File download failures
-- Data validation checks
-
-## Contributing
-
-Please read CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE.md file for details.
-
-## Acknowledgments
-
-- Mergent Online for providing the research report database
-- The Selenium and BeautifulSoup communities for their excellent documentation
-- Contributors who have helped improve this project
-
-## Contact
-
-For any questions or concerns, please open an issue in the GitHub repository.
-
----
-**Note**: This tool is intended for authorized users of Mergent Online and should be used in compliance with their terms of service.
+If you encounter any issues:
+1. Check the log file (scraper.log)
+2. Verify your Excel file format
+3. Ensure all prerequisites are met
+4. Contact technical support if issues persist
