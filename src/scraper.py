@@ -15,40 +15,98 @@ from extract_sheets import extract_data_from_excel
 import logging
 import argparse
 import pandas as pd
+from datetime import datetime, timedelta
+from collections import deque
+import time
+import random
 
-def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, output_directory="downloads", max_retries=5, initial_delay=1):
+def add_random_delay():
+    """Add a small random delay between 0.01 and 0.05 seconds"""
+    delay = random.uniform(0.01, 0.05)
+    time.sleep(delay)
+
+class RateLimiter:
+    def __init__(self, max_requests, time_window):
+        self.max_requests = max_requests
+        self.time_window = time_window  # in seconds
+        self.requests = deque()
+
+    def can_proceed(self):
+        now = datetime.now()
+        # Remove requests older than the time window
+        while self.requests and self.requests[0] < now - timedelta(seconds=self.time_window):
+            self.requests.popleft()
+        
+        # Check if we can make a new request
+        if len(self.requests) < self.max_requests:
+            self.requests.append(now)
+            return True
+        return False
+
+    def wait_if_needed(self):
+        while not self.can_proceed():
+            time.sleep(1)
+        return True
+
+# Create a global rate limiter instance (500 requests per hour)
+RATE_LIMITER = RateLimiter(max_requests=500, time_window=3600)
+
+def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, output_directory="downloads", max_retries=5, initial_delay=2):
     try:
         # Ensure output directory exists
         Path(output_directory).mkdir(parents=True, exist_ok=True)
         filename = f"{company_name}_{id}_{last_name}_{file_num}_{year}.pdf"
         output_path = os.path.join(output_directory, filename)
+
+        # Wait if we've hit the rate limit
+        RATE_LIMITER.wait_if_needed()
+        
+        # Add random delay before download
+        add_random_delay()
+
         session = requests.Session()
         session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
             "Accept": "application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer": "https://www.mergentonline.com",  # Update this as per the originating site
+            "Referer": "https://www.mergentonline.com",
         })
+
         current_retry = 0
         while current_retry < max_retries:
             try:
                 print(f"Attempt {current_retry + 1}/{max_retries} - Downloading: {url}")
                 response = session.get(url, allow_redirects=True, stream=True)
                 response.raise_for_status()
-                # Handle meta-refresh redirects
-                if "text/html" in response.headers.get("content-type", ""):
+
+                # Check if we got HTML instead of PDF (indicating PDF not ready)
+                content_type = response.headers.get("content-type", "").lower()
+                
+                if "text/html" in content_type:
                     soup = BeautifulSoup(response.text, "html.parser")
+                    
+                    # Check for loading indicators or error messages
+                    if "loading" in response.text.lower() or "please wait" in response.text.lower():
+                        print(f"PDF not ready yet, waiting {initial_delay} seconds before retry...")
+                        time.sleep(initial_delay)
+                        current_retry += 1
+                        continue
+                    
+                    # Handle meta-refresh redirects
                     meta_refresh = soup.find("meta", attrs={"http-equiv": "refresh"})
                     if meta_refresh and "url=" in meta_refresh["content"]:
                         redirect_url = meta_refresh["content"].split("url=")[-1]
                         print(f"Redirecting to: {redirect_url}")
-                        url = redirect_url  # Update URL and retry
+                        url = redirect_url
+                        time.sleep(initial_delay)  # Wait before following redirect
                         continue
+
                 # Verify PDF content
-                if "application/pdf" not in response.headers.get("content-type", ""):
-                    print("Content is not a PDF, retrying...")
+                if "application/pdf" not in content_type:
+                    print(f"Content is not a PDF (got {content_type}), retrying...")
                     current_retry += 1
-                    time.sleep(initial_delay + current_retry)
+                    time.sleep(initial_delay)
                     continue
+
                 # Save the PDF
                 with open(output_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -56,16 +114,20 @@ def download_pdf_from_s3(url, company_name, id, last_name, file_num, year, outpu
                             f.write(chunk)
                 print(f"Successfully downloaded PDF to: {output_path}")
                 return output_path
+
             except requests.exceptions.RequestException as e:
                 current_retry += 1
-                delay = initial_delay * (2 ** (current_retry - 1))
+                delay = initial_delay * (2 ** (current_retry - 1))  # Exponential backoff
                 print(f"Retry {current_retry}/{max_retries} after {delay}s due to: {e}")
                 time.sleep(delay)
+
         print(f"Failed to download PDF after {max_retries} attempts.")
         return None
+
     except Exception as e:
         print(f"Unexpected error occurred: {e}")
         return None
+
 def openfile(fileId, company_name, id, last_name, year, num):
     if not fileId:
         print("No files to download")
@@ -80,6 +142,7 @@ def openfile(fileId, company_name, id, last_name, year, num):
     initial_delay = 1
     
     download_pdf_from_s3(file_url, company_name, id, last_name, num, year, output_directory, max_retries, initial_delay)
+
 def extract_table_ids(html_content):
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -107,6 +170,7 @@ def extract_table_ids(html_content):
     except Exception as e:
         print(f"Error processing HTML: {str(e)}")
         return [], []
+
 def setup_chrome_options():
     chrome_options = Options()
     chrome_options.add_argument('--no-sandbox')
@@ -259,6 +323,7 @@ def extract_report_ids(firstname, lastname, contributor_name, retry_count=1):
             
             next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
             while next_link:
+                add_random_delay()  # Add random delay before clicking next
                 next_link[0].click()
                 next_link = driver.find_elements(By.XPATH, "//a[contains(text(), 'Next')]")
                 html_content = driver.page_source
@@ -294,11 +359,12 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
+
 def main():
     setup_logging()
     logging.info("Starting scraper")
 
-    file_path = "broker_analyst_2_1.xlsx"
+    file_path = "analysts.xlsx"
     try:
         last_name, first_name, analys_id, IBES_id, company = extract_data_from_excel(file_path)
         logging.info(f"Successfully read {len(first_name)} analysts from Excel")
